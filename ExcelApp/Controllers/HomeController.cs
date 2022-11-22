@@ -10,6 +10,12 @@ using IHostingEnvironment = Microsoft.AspNetCore.Hosting.IHostingEnvironment;
 using Aspose.Cells;
 using ExcelApp.Service;
 using NPOI.Util;
+using DocumentFormat.OpenXml.InkML;
+using Microsoft.EntityFrameworkCore;
+using NPOI.SS.Formula.Functions;
+using System.Text.Json.Serialization;
+using Newtonsoft.Json;
+
 
 namespace ExcelApp.Controllers
 {
@@ -25,10 +31,11 @@ namespace ExcelApp.Controllers
             Environment = _environment;
             _dbContext = dbContext;
         }
-
+        [HttpGet]
         public IActionResult Index()
         {
-            return View();
+            var data = _dbContext.Excel.ToList();
+            return View(data);
         }
 
         public IActionResult Privacy()
@@ -42,14 +49,8 @@ namespace ExcelApp.Controllers
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
 
-        [HttpGet]
-        public IActionResult UploadForm()
-        {
-            var data = _dbContext.Excel.ToList();
-            return View(data);
-        }
         [HttpPost]
-        public  DataTable Import()
+        public JsonResult Import()
         {
             UploadService upload = new UploadService();
             IFormFile file = Request.Form.Files[0];
@@ -90,35 +91,32 @@ namespace ExcelApp.Controllers
 
                 foreach (DataRow item in table.Rows)
                 {
-                    model.Identity = (int)item[0];
+                    model.Identity = int.Parse((string)item[0]);
                     model.FirstName = (string)item[1];
                     model.Surname = (string)item[2];
                     model.Age = (string)item[3];
                     model.Sex = (string)item[4];
-                    model.Active = (string)item[5];
+                    model.Mobile = (string)item[5];
+                    model.Active = (string)item[6];
 
                     AddData(model);
                 }
-                return table;
+
+                return Json(new { success = false});
             }
             else
             {
-                return null;
+                return Json(new { failure = false });
             }
             
         }
 
-        public ActionResult Download()
+        public IActionResult UpdateData(int id)
         {
-            string Files = "wwwroot/UploadExcel/";
-            byte[] fileBytes = System.IO.File.ReadAllBytes(Files);
-            System.IO.File.WriteAllBytes(Files, fileBytes);
-            MemoryStream ms = new MemoryStream(fileBytes);
-            return File(fileBytes, System.Net.Mime.MediaTypeNames.Application.Octet, "employee.xlsx");
+            var model = _dbContext.Excel.FirstOrDefault(n => n.Identity == id);
+            return View(model);
         }
-
-        
-
+        [HttpPost]
         public IActionResult UpdateData(ExcelModel model) 
         {
             if (!ModelState.IsValid)
@@ -128,13 +126,26 @@ namespace ExcelApp.Controllers
 
             _dbContext.Excel.Update(model);
             _dbContext.SaveChanges();
-            return View(nameof(UpdateData));
+            return View(nameof(Index));
         }
 
         public void AddData(ExcelModel model)
         {
+           
+
             _dbContext.Excel.Add(model);
-            _dbContext.SaveChanges();
+            _dbContext.Database.OpenConnection();
+            try
+            {
+                _dbContext.Database.ExecuteSqlRaw("SET IDENTITY_INSERT dbo.Excel ON;");
+                _dbContext.SaveChanges();
+                _dbContext.Database.ExecuteSqlRaw("SET IDENTITY_INSERT dbo.Excel OFF");
+            }
+            finally
+            {
+                _dbContext.Database.CloseConnection();
+            }
+            
         }
     }
 }
